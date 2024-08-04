@@ -1,0 +1,179 @@
+name: build
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "20 7 * * 4" # Weekly on thursday 
+
+env:
+  CARGO_INCREMENTAL: 0
+  RUSTFLAGS: "-Dwarnings"
+
+  # All default features except non-exhaustive-enums,
+  # to check that FFmpeg versions are properly compatible
+  CARGO_FEATURES: "
+    --no-default-features
+    --features codec,device,filter,format
+    --features software-resampling,software-scaling"
+
+  SYS_FEATURES: "
+    --no-default-features
+    --features avcodec,avdevice,avfilter,avformat
+    --features swresample,swscale"
+
+jobs:
+  build-test-lint-linux:
+    name: Linux - FFmpeg ${{ matrix.ffmpeg_version }} - build, test and lint
+    runs-on: ubuntu-22.04
+    container: jrottenberg/ffmpeg:${{ matrix.ffmpeg_version }}-ubuntu
+
+    strategy:
+      matrix:
+        ffmpeg_version:
+          ["3.4", "4.0", "4.1", "4.2", "4.3", "4.4", "5.0", "5.1", "6.0", "6.1", "7.0"]
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends clang curl pkg-config
+      - name: Install Rust stable with clippy and rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "v2-rust"
+          # Only save cache for one FFmpeg version
+          save-if: ${{ matrix.ffmpeg_version == '7.0' }}
+
+      - name: Check format
+        run: cargo fmt -- --check
+      - name: Lint
+        run: cargo clippy --all-targets $CARGO_FEATURES
+      - name: Build
+        run: cargo build --all-targets $CARGO_FEATURES
+      - name: Test bindings
+        run: >
+          cargo test
+          --manifest-path ffmpeg-sys-the-third/Cargo.toml
+          --target-dir target
+          $SYS_FEATURES
+      - name: Test
+        run: cargo test $CARGO_FEATURES
+
+  build-test-lint-macos:
+    name: macOS - FFmpeg ${{ matrix.ffmpeg_version }} - build, test and lint
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        ffmpeg_version: ["4", "5", "6", "7"]
+      fail-fast: false
+
+    env:
+      PKG_CONFIG_PATH: /opt/homebrew/opt/ffmpeg@${{ matrix.ffmpeg_version }}/lib/pkgconfig
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install ffmpeg@${{ matrix.ffmpeg_version }}
+      - name: Install Rust stable with clippy and rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "v2-rust"
+
+      - name: Check format
+        run: cargo fmt -- --check
+      - name: Lint
+        run: cargo clippy --all-targets $CARGO_FEATURES
+      - name: Build
+        run: cargo build --all-targets $CARGO_FEATURES
+      - name: Test bindings
+        run: >
+          cargo test
+          --manifest-path ffmpeg-sys-the-third/Cargo.toml
+          --target-dir target
+          $SYS_FEATURES
+      - name: Test
+        run: cargo test $CARGO_FEATURES
+
+  build-test-lint-windows:
+    name: Windows - FFmpeg ${{ matrix.ffmpeg_version }} - build, test and lint
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        # GyanD builds don't go as far back as the Ubuntu builds
+        ffmpeg_version: ["4.4", "5.0", "5.1", "6.0", "6.1", "7.0"]
+      fail-fast: false
+
+    env:
+      FFMPEG_DOWNLOAD_URL: "https://github.com/GyanD/codexffmpeg/releases/download/VER/ffmpeg-VER-full_build-shared.7z"
+      FFMPEG_INSTALL_PATH: "C:/ffmpeg"
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set libclang path
+        run: |
+          $VCINSTALLDIR = $(& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath)
+          Add-Content $env:GITHUB_ENV "LIBCLANG_PATH=${VCINSTALLDIR}\VC\Tools\LLVM\x64\bin"
+
+      - name: Install FFmpeg ${{ matrix.ffmpeg_version }}
+        run: |
+          $tempFile = New-TemporaryFile
+          $uri = ($env:FFMPEG_DOWNLOAD_URL).Replace('VER', "${{ matrix.ffmpeg_version }}")
+          Invoke-WebRequest "$uri" -OutFile "$tempFile" -TimeoutSec 10
+          7z x -y -o"$env:FFMPEG_INSTALL_PATH" "$tempFile"
+          $ffmpegDir = (Get-ChildItem -Directory "$env:FFMPEG_INSTALL_PATH").FullName
+          Add-Content $env:GITHUB_ENV "FFMPEG_DIR=$ffmpegDir"
+          Add-Content $env:GITHUB_PATH "$ffmpegDir/bin"
+
+      - name: Install Rust stable with clippy and rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "v2-rust"
+          save-if: ${{ matrix.ffmpeg_version == '7.0' }}
+
+      - name: Check format
+        run: cargo fmt -- --check
+      - name: Lint
+        run: cargo clippy --all-targets $CARGO_FEATURES
+      - name: Build
+        run: cargo build --all-targets $CARGO_FEATURES
+      - name: Test bindings
+        run: >
+          cargo test
+          --manifest-path ffmpeg-sys-the-third/Cargo.toml
+          --target-dir target
+          $SYS_FEATURES
+      - name: Test
+        run: cargo test $CARGO_FEATURES
+
+  msrv:
+    runs-on: ubuntu-22.04
+    container: jrottenberg/ffmpeg:7.0-ubuntu
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends clang curl pkg-config
+      # rust-version from Cargo.toml
+      - name: Install Rust 1.61.0
+        uses: dtolnay/rust-toolchain@1.61.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "v2-rust"
+
+      - name: Use predefined lockfile
+        run: mv Cargo.lock.MSRV Cargo.lock
+      - name: Run cargo check
+        run: cargo check --locked $CARGO_FEATURES
