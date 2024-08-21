@@ -3,13 +3,13 @@ name = "ffmpeg-the-third"
 version = "2.0.1+ffmpeg-7.0"
 edition = "2021"
 
-authors = ["meh. <meh@schizofreni.co>", "Zhiming Wang <i@zhimingwang.org>"]
+authors = ["meh. <meh@schizofreni.co>", "Zhiming Wang <i@zhimingwang.org>", "Jing Lu <lujing.bio@qq.com>"]
 license = "WTFPL"
 
 description = "Safe FFmpeg wrapper (FFmpeg 4 compatible fork of the ffmpeg crate)"
 documentation = "https://docs.rs/ffmpeg-the-third"
-homepage = "https://github.com/shssoichiro/ffmpeg-the-third"
-repository = "https://github.com/shssoichiro/ffmpeg-the-third"
+homepage = "https://github.com/lujing-jlu/ffmpeg-the-third-rk"
+repository = "https://github.com/lujing-jlu/ffmpeg-the-third-rk"
 keywords = ["ffmpeg", "multimedia", "video", "audio"]
 categories = ["multimedia"]
 
@@ -134,3 +134,4 @@ build-lib-ssh = ["ffmpeg-sys-the-third/build-lib-ssh"]
 
 # platforms
 rpi = []
+rk = []
